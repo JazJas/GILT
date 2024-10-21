@@ -11,7 +11,9 @@ This fork now uses Ollama as its default engine, enabling support for local LLMs
 ## Build this extension
 
 npm install
+
 tsc
+
 vsce package
 
 ## Install this extension
