@@ -1,13 +1,26 @@
 # GILT - Generation-based Information-support with LLM Technology
 
-GILT (Generation-based Information-support with LLM Technology) is a prototype in-IDE LLM information support tool. GILT is available in the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=dayen.gilt).
+GILT (Generation-based Information-support with LLM Technology) is a prototype in-IDE LLM information support tool.
+
+Its original [version](https://github.com/namdy0429/GILT) only supports OpenAI and requires an OpenAI API key, and is available in the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=dayen.gilt).
+
+This fork now uses Ollama as its default engine, enabling support for local LLMs, with `llama3.1:latest` for chat and text completions, and `codestral:22b-v0.1-q6_K` for code completions.
 
 ![overview](https://github.com/namdy0429/GILT/assets/6078004/a83f901b-30eb-4b12-a3d2-fc66c5644bbf)
 
+## Build this extension
+
+npm install
+tsc
+vsce package
+
+## Install this extension
+
+code --install-extension ./gilt-1.0.0-beta.vsix
 
 ## Requirements
 
-To use GILT, you will need your own [OpenAI API key](https://openai.com/blog/openai-api).
+To use GILT, you will need your own [OpenAI API key](https://openai.com/blog/openai-api), or local LLMs through [Ollama](https://ollama.com/).
 
 ## Features
 
@@ -61,9 +74,11 @@ You can configure the LLM settings at `Settings` > `Extensions` > `GILT` (`Ctrl/
 
 Configurations that may be useful to adjust include:
 
-- To use the GPT-4 model, set the `Chat Model` to `gpt-4`.
+- To communicate with Ollama on a different port or host, set `ollamaUrl` to `http://<ip>:<port>`, replacing <ip> and <port> with the appropriate values.
+- To use OpenAI as the LLM engine, set `llmProvider` to `openai`.
+- To use the GPT-4 model, set `Chat Model` to `gpt-4`.
 - The temperature controls how much randomness is in the output. The default value for GILT is `0.2`. Use `0` to make it produce the same output every time you ask the same question or increase it for more creativity.
-- To allow GILT to incorporate longer context and prompts, increase the `Max Tokens`.
+- To allow GILT to incorporate longer context and prompts, increase `Max Tokens`.
 
 ### Troubleshooting
 

@@ -53,12 +53,12 @@ export class Logger {
     this.calcPersist(); // Reset the persistence stamps
 
     if (this.log.length) {
-      const logCopy = this.log;
+      const logCopy = this.log.map(entry => entry.toString());
       this.log = []; // Clear the persisted data
       vscode.workspace.fs.writeFile(
         chunkUri,
-        Buffer.from(JSON5.stringify(logCopy))
-      );
+        Buffer.from(logCopy.join('\n'))
+      )
     } else {
       console.debug("No log data to persist");
     }

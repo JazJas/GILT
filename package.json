@@ -1,12 +1,11 @@
 {
   "name": "gilt",
   "displayName": "GILT",
-  "description": "GILT is a prototype in-IDE LLM information support tool. It is designed to help programmers understand the code they are working on by providing explanations of the code. GILT is capable of generating on-demand information while considering the user’s local code context, by incorporating it into the LLM prompts.",
-  "version": "1.0.0-alpha",
-  "repository": "https://github.com/namdy0429/GILT",
-  "icon": "media/logo.png",
+  "description": "GILT is a prototype in-IDE LLM information support tool. It is designed to help programmers understand the code they are working on by providing explanations of the code. GILT is capable of generating on-demand information while considering the user’s local code context, by incorporating it into the LLM prompts. Its original version (https://github.com/namdy0429/GILT) only supports OpenAI and requires an OpenAI API key. It now supports local LLMs through Ollama.",
+  "version": "1.0.0-beta",
+  "repository": "https://github.com/JazJas/GILT",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.94.0"
   },
   "categories": [
     "Machine Learning",
@@ -15,12 +14,13 @@
   "keywords": [
     "AI",
     "OpenAI",
-    "GPT"
+    "GPT",
+    "Ollama"
   ],
   "activationEvents": [
     "onStartupFinished"
   ],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -57,6 +57,17 @@
     "configuration": {
       "title": "GILT",
       "properties": {
+        "gilt.llmProvider": {
+          "type": "string",
+          "enum": ["openai", "ollama"],
+          "default": "ollama",
+          "description": "Choose the LLM provider"
+        },
+        "gilt.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "URL for Ollama API"
+        },
         "GILT.org": {
           "type": "string",
           "default": null,
@@ -64,19 +75,30 @@
         },
         "GILT.chatModel": {
           "type": "string",
-          "default": "gpt-3.5-turbo",
-          "markdownDescription": "The OpenAI [model](https://beta.openai.com/docs/models) to use for chat completions"
+          "default": "llama3.1:latest",
+          "markdownDescription": "The model to use for chat completions"
         },
         "GILT.model": {
           "type": "string",
-          "default": "text-davinci-003",
-          "markdownDescription": "The OpenAI [model](https://beta.openai.com/docs/models) to use for text completions"
+          "default": "llama3.1:latest",
+          "markdownDescription": "The model to use for text completions"
+        },
+        "GILT.codeModel": {
+          "type": "string",
+          "default": "codestral:22b-v0.1-q6_K",
+          "markdownDescription": "The model to use for code completions"
         },
         "GILT.maxTokens": {
           "type": "number",
-          "default": 2400,
+          "default": 2048,
           "minimum": 1,
           "markdownDescription": "The maximum number of [tokens](https://beta.openai.com/docs/introduction/overview) for each text request to GPT"
+        },
+        "GILT.codeMaxTokens": {
+          "type": "number",
+          "default": 2048,
+          "minimum": 1,
+          "markdownDescription": "The maximum number of [tokens](https://beta.openai.com/docs/introduction/overview) for each code request to GPT"
         },
         "GILT.temperature": {
           "type": "number",
@@ -84,17 +106,6 @@
           "minimum": 0,
           "maximum": 1,
           "markdownDescription": "The [temperature](https://beta.openai.com/docs/api-reference/completions/create#completions/create-temperature) of each text request to GPT. Must be between 0 and 1"
-        },
-        "GILT.codeModel": {
-          "type": "string",
-          "default": "code-davinci-002",
-          "markdownDescription": "The OpenAI [model](https://beta.openai.com/docs/models) to use for code completions"
-        },
-        "GILT.codeMaxTokens": {
-          "type": "number",
-          "default": 250,
-          "minimum": 1,
-          "markdownDescription": "The maximum number of [tokens](https://beta.openai.com/docs/introduction/overview) for each code request to GPT"
         },
         "GILT.codeTemperature": {
           "type": "number",
@@ -138,34 +149,6 @@
       ]
     }
   },
-  "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
-  },
-  "devDependencies": {
-    "@types/glob": "^8.0.0",
-    "@types/highlight.js": "^10.1.0",
-    "@types/mocha": "^10.0.1",
-    "@types/node": "16.x",
-    "@types/vscode": "^1.74.0",
-    "@typescript-eslint/eslint-plugin": "^5.45.0",
-    "@typescript-eslint/parser": "^5.45.0",
-    "@vscode/test-electron": "^2.2.0",
-    "eslint": "^8.28.0",
-    "glob": "^8.0.3",
-    "mocha": "^10.1.0",
-    "typescript": "^4.9.4"
-  },
-  "author": "Daye Nam",
-  "license": "GPL-3.0-or-later",
-  "bugs": {
-    "url": "https://github.com/namdy0429/GILT/issues"
-  },
-  "homepage": "https://github.com/namdy0429/GILT#readme",
   "dependencies": {
     "@ts-stack/markdown": "^1.4.0",
     "highlight.js": "^11.7.0",
@@ -174,8 +157,39 @@
     "openai": "^3.2.0",
     "winston": "^3.8.2"
   },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.94.0",
+    "@types/mocha": "^10.0.8",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^8.7.0",
+    "@typescript-eslint/parser": "^8.7.0",
+    "eslint": "^9.11.1",
+    "typescript": "^5.6.2",
+    "ts-loader": "^9.5.1",
+    "webpack": "^5.95.0",
+    "webpack-cli": "^5.1.4",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1"
+  },
+  "author": "Jason Xie",
+  "license": "GPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/JazJas/GILT/issues"
+  },
+  "homepage": "https://github.com/JazJas/GILT#readme",
   "pricing": "Free",
-  "publisher": "Daye Nam",
+  "publisher": "Jason Xie",
   "galleryBanner": {
     "color": "#D79D58"
   }

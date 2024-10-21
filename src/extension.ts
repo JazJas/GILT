@@ -1,60 +1,60 @@
 import * as vscode from 'vscode';
 import {
-	setNewAPIKey,
-	buildStatusBarItem,
-	OPENAI_API_KEY,
+        setNewAPIKey,
+        buildStatusBarItem,
+        OPENAI_API_KEY
 } from './utils';
 
 import * as tm from "./telemetry/Telemetry";
 import GiltViewProvider from './gilt-view-provider';
-
+import { loggers } from 'winston';
 
 const disposables: vscode.Disposable[] = []; // Keep track of disposables
 
 // This method is called when the extension is activated
 export async function activate(context: vscode.ExtensionContext) {
-	const giltViewProvider = new GiltViewProvider(context);
-	const statusBarItem = buildStatusBarItem();
+        const giltViewProvider = new GiltViewProvider(context);
+        const statusBarItem = buildStatusBarItem();
 
-	statusBarItem.show();
+        statusBarItem.show();
 
-	const modalMesesageOptions = {
-		"modal": true,
-		"detail": "- GPT-3"
-	};
+    const modalMesesageOptions = {
+        "modal": true,
+        "detail": "- LLM Powered"
+    };
 
-	tm.init(context);
+    tm.init(context);
 
-	for (const cmd of Object.values({ ...tm.commands })) {
-		const reg = vscode.commands.registerCommand(cmd.name, cmd.fn);
-		context.subscriptions.push(reg);
-		disposables.push(reg);
-	  }
+    for (const cmd of Object.values({ ...tm.commands })) {
+        const reg = vscode.commands.registerCommand(cmd.name, cmd.fn);
+        context.subscriptions.push(reg);
+        disposables.push(reg);
+    }
 
-	// Create explanation for highlighted code considering the API
-	let createExplanation = vscode.commands.registerCommand('GILT.createExp', async () => {
-		console.log('Running createExp');
+    // Create explanation for highlighted code considering the API
+    let createExplanation = vscode.commands.registerCommand('GILT.createExp', async () => {
+        console.log('Running createExp');
 
-		const editor = vscode.window.activeTextEditor;
+        const editor = vscode.window.activeTextEditor;
 
-		if (!editor) {
-			return;
-		}
+        if (!editor) {
+            return;
+        }
 
-		const selectedText = editor.document.getText(editor.selection);
+        const selectedText = editor.document.getText(editor.selection);
 
-		if (!selectedText) {
-			vscode.window.showWarningMessage('No selected text');
-			return;
-		}
-		statusBarItem.hide();
-		const statusMessage = vscode.window.setStatusBarMessage('$(hubot) Generating your explanation! $(book)');
+        if (!selectedText) {
+            vscode.window.showWarningMessage('No selected text');
+            return;
+        }
+        statusBarItem.hide();
+        const statusMessage = vscode.window.setStatusBarMessage('$(hubot) Generating your explanation! $(book)');
 
-		await giltViewProvider.sendRequest({code: selectedText, type: "askGptOverview", filename: editor.document.fileName});
+        await giltViewProvider.sendRequest({code: selectedText, type: "askGptOverview", filename: editor.document.fileName});
 
-		statusMessage.dispose();
-		statusBarItem.show();
-	});
+        statusMessage.dispose();
+        statusBarItem.show();
+    });
 
 	// Update OpenAI API Key
 	let updateAPIKey = vscode.commands.registerCommand('GILT.updateAPIKey', async () => {
@@ -82,24 +82,23 @@ export async function activate(context: vscode.ExtensionContext) {
 		statusBarItem.show();
 	});
 
-
-	context.subscriptions.push(
+    context.subscriptions.push(
         createExplanation,
-		updateAPIKey,
-		removeAPIKey,
-		vscode.window.registerWebviewViewProvider("gilt-vscode-plugin.view", giltViewProvider, {
-			webviewOptions: { retainContextWhenHidden: true }
-		})
+        updateAPIKey,
+        removeAPIKey,
+        vscode.window.registerWebviewViewProvider("gilt-vscode-plugin.view", giltViewProvider, {
+            webviewOptions: { retainContextWhenHidden: true }
+        })
+    );
 
-	);
+    tm.listeners.forEach((listener) => {
+        context.subscriptions.push(listener.event(listener.fn));
+    });
 
-	tm.listeners.forEach((listener) => {
-		context.subscriptions.push(listener.event(listener.fn));
-	  });
-};
+}
 
 // This method is called when your extension is deactivated
-export function deactivate() { 
-	disposables.forEach((e) => e.dispose());
-	tm.deinit();
+export function deactivate() {
+    disposables.forEach((e) => e.dispose());
+    tm.deinit();
 }

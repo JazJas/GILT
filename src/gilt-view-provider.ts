@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-
 import { Configuration, OpenAIApi } from "openai";
+import axios from 'axios';
 import {
-	initAuth,
-	Config,
+    initAuth,
+    Config,
     createChatPayload,
     validateChatPayload
 } from './utils';
@@ -12,6 +12,52 @@ import * as telemetry from "./telemetry/Telemetry";
 
 import { Marked, Renderer} from '@ts-stack/markdown';
 import hljs from 'highlight.js';
+
+// added for supporting Ollama
+interface LLMProvider {
+    createChatCompletion(payload: any, options: any): Promise<any>;
+}
+
+class OpenAIProvider implements LLMProvider {
+    private openai: OpenAIApi;
+
+    constructor(credentials: Config) {
+        const openaiConfig = new Configuration({
+            ...credentials
+        });
+        this.openai = new OpenAIApi(openaiConfig);
+    }
+
+    async createChatCompletion(payload: any, options: any): Promise<any> {
+        return this.openai.createChatCompletion(payload, options);
+    }
+}
+
+class OllamaProvider implements LLMProvider {
+    private baseUrl: string;
+
+    constructor(baseUrl: string) {
+        this.baseUrl = baseUrl;
+    }
+
+    async createChatCompletion(payload: any, options: any): Promise<any> {
+        const response = await axios.post(`${this.baseUrl}/api/chat`, {
+            model: payload.model,
+            messages: payload.messages,
+            stream: false
+        }, options);
+
+        return {
+            data: {
+                choices: [{ message: { content: response.data.message.content } }]
+            }
+        };
+    }
+}
+
+// end
+
+
 
 class MyRenderer extends Renderer
 {
@@ -38,8 +84,8 @@ const initOpenAI = (credentials: Config): OpenAIApi => {
 export default class GiltViewProvider implements vscode.WebviewViewProvider {
     private webView?: vscode.WebviewView;
     private credentials?: any;
-    private openai?: any;
-    private previousChat:Array<any> = [];
+    private llmProvider?: LLMProvider;
+    private previousChat: Array<any> = [];
     private message?: any;
     private ac: AbortController = new AbortController();
     private overviewId: number = 0;
@@ -101,18 +147,30 @@ export default class GiltViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
+    //updated for supporting Ollama
     public async setUpConnection() {
         this.credentials = await initAuth(this.context);
-        this.openai = initOpenAI(this.credentials);
+        const providerType = vscode.workspace.getConfiguration('gilt').get('llmProvider', 'openai');
+
+        if (providerType === 'openai') {
+            this.llmProvider = new OpenAIProvider(this.credentials);
+        } else if (providerType === 'ollama') {
+            const ollamaUrl = vscode.workspace.getConfiguration('gilt').get('ollamaUrl', 'http://localhost:11434');
+            this.llmProvider = new OllamaProvider(ollamaUrl);
+        } else {
+            throw new Error(`Unsupported LLM provider: ${providerType}`);
+        }
+
         console.log("set up connection");
         vscode.commands.executeCommand(
             telemetry.commands.logTelemetry.name,
             new telemetry.LoggerEntry(
-              "GPT.setupConnection",
-              "GPT connection is set up",
+                "LLM.setupConnection",
+                `${providerType} connection is set up`,
             )
         );
-    };
+    }
+
     private capitalizeFirstLetter(str: string) {
         return str.charAt(0).toUpperCase() + str.slice(1);
     };
@@ -532,53 +590,58 @@ export default class GiltViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    public async queryGpt(chatPrompt: Array<any>, assistantPrompt: string, abortConteroller: AbortController, isQuery: boolean=false) {
-        if (!this.openai) {
+    //updated to support Ollama
+    public async queryGpt(chatPrompt: Array<any>, assistantPrompt: string, abortController: AbortController, isQuery: boolean = false) {
+
+        if (!this.llmProvider) {
             await this.setUpConnection();
+
+            // Add a check to verify if llmProvider is set after setUpConnection
+            if (!this.llmProvider) {
+                throw new Error('llmProvider is still not initialized after setUpConnection');
+            }
         }
- 
-        try { 
+
+        try {
             vscode.commands.executeCommand(
                 telemetry.commands.logTelemetry.name,
                 new telemetry.LoggerEntry(
-                "GPT.sendQuery",
-                "GPT sending query request: %s",
-                [chatPrompt.map(msg => `${msg.role}::: ${msg.content}`).join(':::::')]
+                    "LLM.sendQuery",
+                    "LLM sending query request: %s",
+                    [chatPrompt.map(msg => `${msg.role}::: ${msg.content}`).join(':::::')]
                 )
             );
             let payload = createChatPayload('chat', chatPrompt);
             console.log(payload);
             let { isValid, reason } = validateChatPayload(payload);
 
-			if (!isValid) {
-				vscode.window.showErrorMessage(reason);
-			};
+            if (!isValid) {
+                vscode.window.showErrorMessage(reason);
+            }
 
-			const response = await this.openai.createChatCompletion({ ...payload }, { timeout: 60000, signal: abortConteroller.signal });
-            console.log(response);
-
+            const response = await this.llmProvider.createChatCompletion({ ...payload }, { timeout: 60000, signal: abortController.signal });
 
             let output = "";
             if (isQuery) {
                 output = response.data.choices[0].message?.content.trim();
-            }
-            else {
+            } else {
                 output = assistantPrompt + this.lowerFirstLetter(response.data.choices[0].message?.content.trim());
             }
 
-			if(response.data.usage?.total_tokens && response.data.usage?.total_tokens >= payload.max_tokens) {
-				vscode.window.showErrorMessage(`The completion was ${response.data.usage?.total_tokens} tokens and exceeds your max_token value of ${payload.max_tokens}. Please increase your settings to allow for longer completions.`);
-			}
-    
-            vscode.commands.executeCommand(
-                telemetry.commands.logTelemetry.name,
-                new telemetry.LoggerEntry(
-                "GPT.response",
-                "GPT Response: %s, number of tokens: %s",
-                [output, response.data.usage?.total_tokens]
-                )
-            ); 
-            return output; 
+            //if (response.data.usage?.total_tokens && response.data.usage?.total_tokens >= payload.max_tokens) {
+            //    vscode.window.showErrorMessage(`The completion was ${response.data.usage?.total_tokens} tokens and exceeds your max_token value of ${payload.max_tokens}. Please increase your settings to allow for longer completions.`);
+            //}
+
+            // vscode.commands.executeCommand(
+            //     telemetry.commands.logTelemetry.name,
+            //     new telemetry.LoggerEntry(
+            //         "LLM.response",
+            //         "LLM Response: %s, number of tokens: %s",
+            //         [output, response.data.usage?.total_tokens]
+            //     )
+            // );
+
+            return output;
         } catch (error: any) {
             if (error?.message === "canceled") {
                 console.log("Request aborted");
@@ -639,7 +702,7 @@ export default class GiltViewProvider implements vscode.WebviewViewProvider {
 
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'main.js'));
         const stylesMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'main.css'));
-        const stylesHighlightUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'node_modules', 'highlight.js', 'styles', 'github-dark.css'));
+        const stylesHighlightUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'node_modules', 'highlight.js'));
         const mainHTML = `<!DOCTYPE html>
 			<html lang="en">
 			<head>
@@ -648,7 +711,7 @@ export default class GiltViewProvider implements vscode.WebviewViewProvider {
                 <link href="${stylesHighlightUri}" rel="stylesheet">
 				<link href="${stylesMainUri}" rel="stylesheet">
 				<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-				<script src="https://cdn.tailwindcss.com"></script>
+                <script src="https://cdn.tailwindcss.com"></script>
 			</head>
 			<body class="overflow-hidden">
 				<div class="flex flex-col h-screen">
